@@ -8,14 +8,35 @@ document.addEventListener('DOMContentLoaded', function() {
   const pdfIndicator = document.querySelector('.pdf-indicator');
   const pdfName = document.querySelector('.pdf-name');
   const removePdfButton = document.querySelector('.remove-pdf');
+  const languageModal = document.querySelector('.language-modal');
+  const languageSettingsButton = document.querySelector('.language-settings-button');
+  const closeModalButton = document.querySelector('.close-modal');
+  const languageOptions = document.querySelectorAll('.language-option');
+  const currentLanguageLabels = document.querySelectorAll('.current-language');
   
   // Track conversation ID for history
   let currentConversationId = null;
   let currentModel = 'llama3-70b';  // Default model
   let currentPdfFile = null;  // Store the selected PDF file
+  let currentLanguage = 'en';  // Default language is English
+  
+  // Language names mapping
+  const languageNames = {
+    'en': 'English',
+    'es': 'Spanish',
+    'fr': 'French',
+    'de': 'German',
+    'it': 'Italian',
+    'ja': 'Japanese',
+    'zh': 'Chinese',
+    'pt': 'Portuguese',
+    'ru': 'Russian',
+    'ar': 'Arabic',
+    'hi': 'Hindi'
+  };
   
   // Function to add a message to the chat
-  function addMessage(message, sender) {
+  function addMessage(message, sender, isSystem = false) {
       // Remove centered content when first message is sent
       if (centeredContent && mainContent.contains(centeredContent)) {
           mainContent.removeChild(centeredContent);
@@ -25,98 +46,20 @@ document.addEventListener('DOMContentLoaded', function() {
               const chatContainer = document.createElement('div');
               chatContainer.className = 'chat-container';
               mainContent.appendChild(chatContainer);
-              
-              // Add styles for the chat container
-              const style = document.createElement('style');
-              style.textContent = `
-                  .chat-container {
-                      width: 100%;
-                      max-width: 800px;
-                      margin: 0 auto;
-                      padding: 1rem;
-                      overflow-y: auto;
-                      height: 100%;
-                      display: flex;
-                      flex-direction: column;
-                  }
-                  
-                  .message {
-                      padding: 0.75rem 1rem;
-                      margin-bottom: 1rem;
-                      border-radius: 8px;
-                      max-width: 80%;
-                  }
-                  
-                  .user-message {
-                      background-color: #2b2b2b;
-                      align-self: flex-end;
-                  }
-                  
-                  .bot-message {
-                      background-color: #1e1e1e;
-                      border: 1px solid #333;
-                      align-self: flex-start;
-                      white-space: pre-wrap;
-                  }
-
-                  .typing-indicator {
-                      display: flex;
-                      align-items: center;
-                      padding: 0.75rem 1rem;
-                      margin-bottom: 1rem;
-                      border-radius: 8px;
-                      background-color: #1e1e1e;
-                      border: 1px solid #333;
-                      align-self: flex-start;
-                  }
-                  
-                  .typing-dot {
-                      width: 8px;
-                      height: 8px;
-                      margin: 0 2px;
-                      background-color: #666;
-                      border-radius: 50%;
-                      opacity: 0.6;
-                      animation: typing-dot 1.4s infinite ease-in-out;
-                  }
-                  
-                  .typing-dot:nth-child(1) { animation-delay: 0s; }
-                  .typing-dot:nth-child(2) { animation-delay: 0.2s; }
-                  .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-                  
-                  @keyframes typing-dot {
-                      0%, 60%, 100% { transform: translateY(0); }
-                      30% { transform: translateY(-5px); }
-                  }
-                  
-                  .message-with-pdf {
-                      position: relative;
-                  }
-                  
-                  .pdf-badge {
-                      display: inline-block;
-                      background-color: #444;
-                      color: #fff;
-                      padding: 2px 6px;
-                      border-radius: 4px;
-                      font-size: 0.8rem;
-                      margin-bottom: 5px;
-                  }
-                  
-                  .pdf-badge i {
-                      margin-right: 4px;
-                  }
-              `;
-              document.head.appendChild(style);
           }
       }
       
       // Create message element
       const messageElement = document.createElement('div');
-      messageElement.className = `message ${sender}-message`;
+      
+      if (isSystem) {
+          messageElement.className = 'system-message';
+      } else {
+          messageElement.className = `message ${sender}-message`;
+      }
       
       // Add PDF badge if this is a user message with a PDF
-      if (sender === 'user' && currentPdfFile) {
+      if (sender === 'user' && currentPdfFile && !isSystem) {
           messageElement.classList.add('message-with-pdf');
           
           const pdfBadge = document.createElement('div');
@@ -162,6 +105,39 @@ document.addEventListener('DOMContentLoaded', function() {
       return indicator;
   }
   
+  // Function to check if message contains language change request
+  function containsLanguageChangeRequest(message) {
+      const languageChangeKeywords = [
+          "speak in", "talk in", "reply in", "respond in", 
+          "use", "switch to", "change to", "change language to",
+          "habla en", "parle en", "sprich in", "parla in"
+      ];
+      
+      return languageChangeKeywords.some(keyword => 
+          message.toLowerCase().includes(keyword.toLowerCase())
+      );
+  }
+  
+  // Function to update UI language indicators
+  function updateLanguageUI(langCode) {
+      currentLanguage = langCode;
+      const langName = languageNames[langCode] || langCode;
+      
+      // Update all current language labels
+      currentLanguageLabels.forEach(label => {
+          label.textContent = langName + (langCode === 'en' ? ' (Default)' : '');
+      });
+      
+      // Update active state in language options
+      languageOptions.forEach(option => {
+          if (option.getAttribute('data-lang') === langCode) {
+              option.classList.add('active');
+          } else {
+              option.classList.remove('active');
+          }
+      });
+  }
+  
   // Send message function
   async function sendMessage() {
       const message = chatInput.value.trim();
@@ -175,6 +151,9 @@ document.addEventListener('DOMContentLoaded', function() {
       
       // Show typing indicator
       const typingIndicator = showTypingIndicator();
+      
+      // Check if this is potentially a language change request
+      const isLanguageRequest = containsLanguageChangeRequest(message);
       
       try {
           // Create form data for the API request
@@ -214,6 +193,16 @@ document.addEventListener('DOMContentLoaded', function() {
               currentConversationId = data.conversation_id;
           }
           
+          // Check if language was changed
+          if (data.preferred_language && data.preferred_language !== currentLanguage) {
+              // Add system message about language change
+              const langName = languageNames[data.preferred_language] || data.preferred_language;
+              addMessage(`Language changed to ${langName}`, 'system', true);
+              
+              // Update UI
+              updateLanguageUI(data.preferred_language);
+          }
+          
           // Add bot response to chat
           addMessage(data.response, 'bot');
           
@@ -249,6 +238,43 @@ document.addEventListener('DOMContentLoaded', function() {
       pdfUpload.value = '';
       pdfIndicator.style.display = 'none';
   }
+  
+  // Function to change language via API
+  async function changeLanguage(langCode) {
+      // Only make API call if we have a conversation already
+      if (currentConversationId) {
+          try {
+              const formData = new FormData();
+              formData.append('language_code', langCode);
+              
+              const response = await fetch(`/conversations/${currentConversationId}/language`, {
+                  method: 'PUT',
+                  body: formData
+              });
+              
+              if (!response.ok) {
+                  throw new Error(`Error: ${response.status}`);
+              }
+              
+              const data = await response.json();
+              
+              if (data.success) {
+                  // Add system message about language change
+                  const langName = languageNames[langCode] || langCode;
+                  addMessage(`Language changed to ${langName}`, 'system', true);
+              }
+          } catch (error) {
+              console.error('Error changing language:', error);
+              addMessage(`Failed to change language: ${error.message}`, 'system', true);
+          }
+      }
+      
+      // Update UI regardless of API call
+      updateLanguageUI(langCode);
+      
+      // Close modal
+      languageModal.style.display = 'none';
+  }
 
   // Initialize UI and event listeners
   function initializeUI() {
@@ -277,12 +303,39 @@ document.addEventListener('DOMContentLoaded', function() {
       pdfUpload.addEventListener('change', handlePdfSelection);
       removePdfButton.addEventListener('click', clearPdfSelection);
       
+      // Language modal
+      languageSettingsButton.addEventListener('click', function() {
+          languageModal.style.display = 'block';
+      });
+      
+      closeModalButton.addEventListener('click', function() {
+          languageModal.style.display = 'none';
+      });
+      
+      // Close modal when clicking outside
+      window.addEventListener('click', function(event) {
+          if (event.target === languageModal) {
+              languageModal.style.display = 'none';
+          }
+      });
+      
+      // Language option buttons
+      languageOptions.forEach(option => {
+          option.addEventListener('click', function() {
+              const langCode = this.getAttribute('data-lang');
+              changeLanguage(langCode);
+          });
+      });
+      
+      // Mark English as active by default
+      document.querySelector('.language-option[data-lang="en"]').classList.add('active');
+      
       // Quick Settings dropdown
       const dropdownButton = document.querySelector('.dropdown-button');
       if (dropdownButton) {
           dropdownButton.addEventListener('click', function() {
-              // Implement dropdown functionality if needed
-              console.log('Settings dropdown clicked');
+              const dropdownContent = document.querySelector('.dropdown-content');
+              dropdownContent.style.display = dropdownContent.style.display === 'block' ? 'none' : 'block';
           });
       }
       
