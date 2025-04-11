@@ -82,6 +82,7 @@ class Conversation(BaseModel):
     model_id: str
     created_at: str
     last_updated: str
+    preferred_language: str = "en"  # Default language is English
 
 # Create a new conversation or get existing one
 def get_conversation(conversation_id: Optional[str] = None) -> Conversation:
@@ -95,7 +96,8 @@ def get_conversation(conversation_id: Optional[str] = None) -> Conversation:
         messages=[],
         model_id=DEFAULT_MODEL,
         created_at=now,
-        last_updated=now
+        last_updated=now,
+        preferred_language="en"  # Default to English
     )
     return conversations[new_id]
 
@@ -112,7 +114,8 @@ async def get_conversations():
                 "model_id": conv.model_id,
                 "created_at": conv.created_at,
                 "last_updated": conv.last_updated,
-                "message_count": len(conv.messages)
+                "message_count": len(conv.messages),
+                "preferred_language": conv.preferred_language
             }
             for conv_id, conv in conversations.items()
         ]
@@ -156,14 +159,39 @@ async def chat(
         except Exception as e:
             context = f"(PDF Error: {str(e)})"
 
-    # Detect language and translate if needed
-    lang = detect_language(message)
-    english_message = translate_text(message, lang)
+    # Check if user wants to change the preferred language
+    detected_lang = detect_language(message)
     
-    # Add user message to conversation history
+    # Check if the message is about changing language
+    change_language_keywords = [
+        "speak in", "talk in", "reply in", "respond in", 
+        "use", "switch to", "change to", "change language to",
+        "habla en", "parle en", "sprich in", "parla in"
+    ]
+    
+    is_language_change_request = any(keyword in message.lower() for keyword in change_language_keywords)
+    
+    if is_language_change_request:
+        # Update the preferred language
+        conversation.preferred_language = detected_lang
+        # Add a system message indicating language change
+        system_msg = Message(
+            role="system",
+            content=f"Language preference updated to: {detected_lang}",
+            timestamp=datetime.now().isoformat()
+        )
+        conversation.messages.append(system_msg)
+    
+    # Only translate if not using English and not the first request to change language
+    original_message = message
+    if conversation.preferred_language != "en" and not is_language_change_request:
+        # Translate message to English for processing
+        message = translate_text(message, conversation.preferred_language)
+    
+    # Add user message to conversation history (in English for processing)
     user_message = Message(
         role="user",
-        content=english_message,
+        content=message,
         timestamp=datetime.now().isoformat()
     )
     conversation.messages.append(user_message)
@@ -193,24 +221,27 @@ async def chat(
         messages=model_messages
     )
 
-    english_response = chat_completion.choices[0].message.content.strip()
+    response = chat_completion.choices[0].message.content.strip()
     
-    now=datetime.now().isoformat()
-
+    # Add AI message to conversation history (in English)
     ai_message = Message(
-    role="assistant",
-    content=english_response,
-    timestamp=datetime.now().isoformat()
+        role="assistant",
+        content=response,
+        timestamp=datetime.now().isoformat()
     )
     conversation.messages.append(ai_message)
     
-    # Translate response back to original language if needed
-    translated_response = translate_text(english_response, lang, reverse=True)
+    # If language is not English and not the first language change request, translate back
+    if conversation.preferred_language != "en" and not is_language_change_request:
+        translated_response = translate_text(response, conversation.preferred_language, reverse=True)
+    else:
+        translated_response = response
 
     return {
         "response": translated_response,
         "conversation_id": conversation.id,
-        "model_id": model_id
+        "model_id": model_id,
+        "preferred_language": conversation.preferred_language
     }
 
 # Get model info
@@ -232,3 +263,14 @@ async def set_conversation_model(conversation_id: str, model_id: str = Form(...)
     conversations[conversation_id].last_updated = datetime.now().isoformat()
     
     return {"success": True, "conversation_id": conversation_id, "model_id": model_id}
+
+# Set preferred language for conversation
+@app.put("/conversations/{conversation_id}/language")
+async def set_conversation_language(conversation_id: str, language_code: str = Form(...)):
+    if conversation_id not in conversations:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    conversations[conversation_id].preferred_language = language_code
+    conversations[conversation_id].last_updated = datetime.now().isoformat()
+    
+    return {"success": True, "conversation_id": conversation_id, "preferred_language": language_code}
