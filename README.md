@@ -102,7 +102,6 @@ POST /chat
 ## Project Structure
 
 ```
-backend/
 ├── main.py                # FastAPI application
 ├── requirements.txt       # Python dependencies
 ├── .env                   # Environment variables (create this)
