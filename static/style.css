@@ -9,6 +9,7 @@
   --accent-color: #ffffff;
   --bubble-bg: #ffffff;
   --bubble-text: #000000;
+  --pdf-bg: #2a2a2a;
 }
 
 * {
@@ -123,6 +124,49 @@ footer {
   margin: 0 auto;
 }
 
+.input-actions {
+  display: flex;
+  align-items: center;
+}
+
+.pdf-upload-label {
+  color: var(--secondary-text);
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: color 0.2s;
+  margin-right: 8px;
+}
+
+.pdf-upload-label:hover {
+  color: var(--text-color);
+}
+
+.pdf-indicator {
+  display: flex;
+  align-items: center;
+  background-color: var(--pdf-bg);
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-right: 8px;
+}
+
+.pdf-name {
+  font-size: 0.8rem;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remove-pdf {
+  background: none;
+  border: none;
+  color: var(--secondary-text);
+  cursor: pointer;
+  margin-left: 4px;
+  font-size: 0.8rem;
+}
+
 .input-icon {
   color: var(--secondary-text);
   font-size: 1.2rem;
@@ -180,5 +224,9 @@ footer {
 @media (max-width: 768px) {
   .input-container {
       max-width: 100%;
+  }
+  
+  .pdf-name {
+      max-width: 60px;
   }
 }
