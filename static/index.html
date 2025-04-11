@@ -40,6 +40,16 @@
         <!-- Input area -->
         <footer>
             <div class="input-container">
+                <div class="input-actions">
+                    <label for="pdf-upload" class="pdf-upload-label">
+                        <i class="fas fa-file-pdf"></i>
+                    </label>
+                    <input type="file" id="pdf-upload" accept=".pdf" style="display: none;">
+                    <div class="pdf-indicator" style="display: none;">
+                        <span class="pdf-name">document.pdf</span>
+                        <button class="remove-pdf"><i class="fas fa-times"></i></button>
+                    </div>
+                </div>
                 <div class="input-icon">
                     <i class="far fa-circle-question"></i>
                 </div>
@@ -53,7 +63,5 @@
             </div>
         </footer>
     </div>
-
-    <script src="script.js"></script>
 </body>
 </html>
