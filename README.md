@@ -28,7 +28,6 @@ A web-based chatbot interface that uses Groq's LLM models to provide intelligent
 1. Clone the repository:
    ```bash
    git clone https://github.com/yourusername/chatbot-ui.git
-   cd backend
    ```
 
 2. Install dependencies:
