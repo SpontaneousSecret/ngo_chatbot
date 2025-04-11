@@ -4,10 +4,15 @@ document.addEventListener('DOMContentLoaded', function() {
   const sendButton = document.querySelector('.send-button');
   const mainContent = document.querySelector('main');
   const centeredContent = document.querySelector('.centered-content');
+  const pdfUpload = document.getElementById('pdf-upload');
+  const pdfIndicator = document.querySelector('.pdf-indicator');
+  const pdfName = document.querySelector('.pdf-name');
+  const removePdfButton = document.querySelector('.remove-pdf');
   
   // Track conversation ID for history
   let currentConversationId = null;
   let currentModel = 'llama3-70b';  // Default model
+  let currentPdfFile = null;  // Store the selected PDF file
   
   // Function to add a message to the chat
   function addMessage(message, sender) {
@@ -83,6 +88,24 @@ document.addEventListener('DOMContentLoaded', function() {
                       0%, 60%, 100% { transform: translateY(0); }
                       30% { transform: translateY(-5px); }
                   }
+                  
+                  .message-with-pdf {
+                      position: relative;
+                  }
+                  
+                  .pdf-badge {
+                      display: inline-block;
+                      background-color: #444;
+                      color: #fff;
+                      padding: 2px 6px;
+                      border-radius: 4px;
+                      font-size: 0.8rem;
+                      margin-bottom: 5px;
+                  }
+                  
+                  .pdf-badge i {
+                      margin-right: 4px;
+                  }
               `;
               document.head.appendChild(style);
           }
@@ -91,7 +114,24 @@ document.addEventListener('DOMContentLoaded', function() {
       // Create message element
       const messageElement = document.createElement('div');
       messageElement.className = `message ${sender}-message`;
-      messageElement.textContent = message;
+      
+      // Add PDF badge if this is a user message with a PDF
+      if (sender === 'user' && currentPdfFile) {
+          messageElement.classList.add('message-with-pdf');
+          
+          const pdfBadge = document.createElement('div');
+          pdfBadge.className = 'pdf-badge';
+          pdfBadge.innerHTML = `<i class="fas fa-file-pdf"></i> ${currentPdfFile.name}`;
+          
+          messageElement.appendChild(pdfBadge);
+          
+          // Add a container for the message text
+          const textContainer = document.createElement('div');
+          textContainer.textContent = message;
+          messageElement.appendChild(textContainer);
+      } else {
+          messageElement.textContent = message;
+      }
       
       // Add message to chat
       document.querySelector('.chat-container').appendChild(messageElement);
@@ -147,6 +187,11 @@ document.addEventListener('DOMContentLoaded', function() {
               formData.append('conversation_id', currentConversationId);
           }
           
+          // Add PDF file if selected
+          if (currentPdfFile) {
+              formData.append('pdf', currentPdfFile);
+          }
+          
           // Make API request to the backend
           const response = await fetch('/chat', {
               method: 'POST',
@@ -172,6 +217,9 @@ document.addEventListener('DOMContentLoaded', function() {
           // Add bot response to chat
           addMessage(data.response, 'bot');
           
+          // Clear PDF after sending
+          clearPdfSelection();
+          
       } catch (error) {
           console.error('Error sending message:', error);
           
@@ -183,6 +231,23 @@ document.addEventListener('DOMContentLoaded', function() {
           // Show error message
           addMessage(`Sorry, there was an error processing your request: ${error.message}`, 'bot');
       }
+  }
+  
+  // Function to handle PDF file selection
+  function handlePdfSelection(event) {
+      const file = event.target.files[0];
+      if (file && file.type === 'application/pdf') {
+          currentPdfFile = file;
+          pdfName.textContent = file.name;
+          pdfIndicator.style.display = 'flex';
+      }
+  }
+  
+  // Function to clear PDF selection
+  function clearPdfSelection() {
+      currentPdfFile = null;
+      pdfUpload.value = '';
+      pdfIndicator.style.display = 'none';
   }
 
   // Initialize UI and event listeners
@@ -207,6 +272,10 @@ document.addEventListener('DOMContentLoaded', function() {
               sendMessage();
           }
       });
+      
+      // PDF upload handling
+      pdfUpload.addEventListener('change', handlePdfSelection);
+      removePdfButton.addEventListener('click', clearPdfSelection);
       
       // Quick Settings dropdown
       const dropdownButton = document.querySelector('.dropdown-button');
