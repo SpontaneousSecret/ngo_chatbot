@@ -15,6 +15,13 @@
             <div class="header-left">
                 <div class="dropdown">
                     <button class="dropdown-button">Quick Settings <i class="fas fa-chevron-down"></i></button>
+                    <div class="dropdown-content">
+                        <div class="dropdown-item">
+                            <span>Language: </span>
+                            <span class="current-language">English (Default)</span>
+                            <button class="language-settings-button"><i class="fas fa-globe"></i></button>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="header-right">
@@ -34,6 +41,7 @@
                     </div>
                 </div>
                 <h1>Chatbot UI</h1>
+                <p class="language-hint">Currently using English. Type "talk in [language]" to change languages.</p>
             </div>
         </main>
 
@@ -62,6 +70,29 @@
                 <i class="fas fa-question"></i>
             </div>
         </footer>
+
+        <!-- Language settings modal -->
+        <div class="modal language-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Language Settings</h2>
+                    <button class="close-modal"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="modal-body">
+                    <p>Currently using: <span class="current-language">English (Default)</span></p>
+                    <p class="modal-info">You can change the language by typing "talk in [language]" in the chat.</p>
+                    <div class="language-options">
+                        <button class="language-option" data-lang="en">English</button>
+                        <button class="language-option" data-lang="es">Español</button>
+                        <button class="language-option" data-lang="fr">Français</button>
+                        <button class="language-option" data-lang="de">Deutsch</button>
+                        <button class="language-option" data-lang="it">Italiano</button>
+                        <button class="language-option" data-lang="ja">日本語</button>
+                        <button class="language-option" data-lang="zh">中文</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </body>
 </html>
