@@ -14,6 +14,7 @@ A web-based chatbot interface that uses Groq's LLM models to provide intelligent
 - 💬 Persistent conversation history
 - 🎨 Clean, modern dark-themed UI
 - 🔄 Model switching without losing context
+- It might talk to you in a language you wouldn't recognize, just tell the ChatBot to talk to you in the language of your choice.
 
 ## Getting Started
 
