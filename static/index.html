@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot UI</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="/static/script.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header>
+            <div class="header-left">
+                <div class="dropdown">
+                    <button class="dropdown-button">Quick Settings <i class="fas fa-chevron-down"></i></button>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="model-selector">
+                    LLaMA3-70b-chat
+                    <i class="fas fa-sliders"></i>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main chat area -->
+        <main>
+            <div class="centered-content">
+                <div class="logo">
+                    <div class="logo-bubble">
+                        <span>UI</span>
+                    </div>
+                </div>
+                <h1>Chatbot UI</h1>
+            </div>
+        </main>
+
+        <!-- Input area -->
+        <footer>
+            <div class="input-container">
+                <div class="input-icon">
+                    <i class="far fa-circle-question"></i>
+                </div>
+                <input type="text" placeholder="Ask anything." class="chat-input">
+                <button class="send-button">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+            <div class="help-button">
+                <i class="fas fa-question"></i>
+            </div>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

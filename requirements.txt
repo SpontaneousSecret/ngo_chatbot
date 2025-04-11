@@ -1,0 +1,9 @@
+groq
+python-dotenv
+langchain-groq
+fastapi
+pdfplumber
+langdetect
+deep-translator
+uvicorn
+python-multipart
