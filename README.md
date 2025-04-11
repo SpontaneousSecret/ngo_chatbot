@@ -2,6 +2,8 @@
 
 A web-based chatbot interface that uses Groq's LLM models to provide intelligent responses with PDF document processing support and multi-language capabilities.
 
+Deployed live on Render: https://ngo-chatbot.onrender.com
+(Due to limited Render resources, the website might take some time to run optimally)
 
 ## Features
 
