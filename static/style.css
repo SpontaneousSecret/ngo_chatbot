@@ -10,6 +10,7 @@
   --bubble-bg: #ffffff;
   --bubble-text: #000000;
   --pdf-bg: #2a2a2a;
+  --modal-bg: rgba(0, 0, 0, 0.7);
 }
 
 * {
@@ -32,6 +33,7 @@ body {
   flex-direction: column;
   height: 100vh;
   width: 100%;
+  position: relative;
 }
 
 /* Header styles */
@@ -41,6 +43,11 @@ header {
   align-items: center;
   padding: 1rem 1.5rem;
   border-bottom: 1px solid var(--border-color);
+}
+
+.dropdown {
+  position: relative;
+  display: inline-block;
 }
 
 .dropdown-button {
@@ -54,12 +61,50 @@ header {
   gap: 0.5rem;
 }
 
+.dropdown-content {
+  display: none;
+  position: absolute;
+  background-color: var(--container-bg);
+  min-width: 200px;
+  box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+  z-index: 1;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.dropdown:hover .dropdown-content {
+  display: block;
+}
+
+.dropdown-item {
+  color: var(--text-color);
+  padding: 12px 16px;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.language-settings-button {
+  background: none;
+  border: none;
+  color: var(--text-color);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.language-settings-button:hover {
+  background-color: var(--highlight-color);
+}
+
 .model-selector {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   color: var(--text-color);
   font-size: 1rem;
+  cursor: pointer;
 }
 
 /* Main content area */
@@ -69,6 +114,7 @@ main {
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  overflow-y: auto;
 }
 
 .centered-content {
@@ -76,6 +122,13 @@ main {
   flex-direction: column;
   align-items: center;
   gap: 1.5rem;
+  text-align: center;
+}
+
+.language-hint {
+  color: var(--secondary-text);
+  font-size: 0.9rem;
+  max-width: 300px;
   text-align: center;
 }
 
@@ -220,13 +273,203 @@ footer {
   cursor: pointer;
 }
 
+/* Chat container styles */
+.chat-container {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 1rem;
+  overflow-y: auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.message {
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: 8px;
+  max-width: 80%;
+}
+
+.user-message {
+  background-color: #2b2b2b;
+  align-self: flex-end;
+}
+
+.bot-message {
+  background-color: #1e1e1e;
+  border: 1px solid #333;
+  align-self: flex-start;
+  white-space: pre-wrap;
+}
+
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: 8px;
+  background-color: #1e1e1e;
+  border: 1px solid #333;
+  align-self: flex-start;
+}
+
+.typing-dot {
+  width: 8px;
+  height: 8px;
+  margin: 0 2px;
+  background-color: #666;
+  border-radius: 50%;
+  opacity: 0.6;
+  animation: typing-dot 1.4s infinite ease-in-out;
+}
+
+.typing-dot:nth-child(1) { animation-delay: 0s; }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing-dot {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-5px); }
+}
+
+.message-with-pdf {
+  position: relative;
+}
+
+.pdf-badge {
+  display: inline-block;
+  background-color: #444;
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  margin-bottom: 5px;
+}
+
+.pdf-badge i {
+  margin-right: 4px;
+}
+
+/* Language badge */
+.language-badge {
+  display: inline-block;
+  background-color: var(--highlight-color);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  margin-bottom: 5px;
+  color: var(--secondary-text);
+}
+
+.language-badge i {
+  margin-right: 4px;
+}
+
+/* Modal styles */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 100;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: var(--modal-bg);
+}
+
+.modal-content {
+  background-color: var(--container-bg);
+  margin: 10% auto;
+  padding: 20px;
+  border: 1px solid var(--border-color);
+  width: 80%;
+  max-width: 500px;
+  border-radius: 8px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.modal-header h2 {
+  font-size: 1.5rem;
+  font-weight: 500;
+}
+
+.close-modal {
+  background: none;
+  border: none;
+  color: var(--text-color);
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.modal-info {
+  margin: 15px 0;
+  color: var(--secondary-text);
+  font-size: 0.9rem;
+}
+
+.language-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.language-option {
+  background-color: var(--highlight-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  transition: background-color 0.2s;
+}
+
+.language-option:hover {
+  background-color: var(--bg-color);
+}
+
+.language-option.active {
+  background-color: var(--accent-color);
+  color: var(--bubble-text);
+}
+
+/* System message */
+.system-message {
+  align-self: center;
+  background-color: transparent;
+  color: var(--secondary-text);
+  font-size: 0.85rem;
+  padding: 4px 8px;
+  margin-bottom: 1rem;
+  font-style: italic;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .input-container {
-      max-width: 100%;
+    max-width: 100%;
   }
   
   .pdf-name {
-      max-width: 60px;
+    max-width: 60px;
+  }
+  
+  .language-options {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .modal-content {
+    width: 90%;
+    margin: 20% auto;
   }
 }
