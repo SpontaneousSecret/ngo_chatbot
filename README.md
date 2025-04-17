@@ -31,7 +31,7 @@ Deployed live on Render: https://ngo-chatbot.onrender.com
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/chatbot-ui.git
+   git clone https://github.com/SpontaneousSecret/ngo_chatbot
    ```
 
 2. Install dependencies:
@@ -41,7 +41,7 @@ Deployed live on Render: https://ngo-chatbot.onrender.com
 
 3. Create a `.env` file in the project root with your Groq API key:
    ```
-   GROQ_API_KEY=your_groq_api_key_here
+   GROQ_API_KEY="your_groq_api_key_here"
    ```
 
 ### Running the Application
