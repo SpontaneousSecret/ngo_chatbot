@@ -7,3 +7,9 @@ langdetect
 deep-translator
 uvicorn
 python-multipart
+pydantic
+torch
+transformers
+peft
+accelerate
+bitsandbytes  # For 4-bit quantization
