@@ -4,7 +4,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from tools.pdf_tool import extract_text_from_pdf
 from tools.language_tool import detect_language, translate_text
-from groq import Groq
+# Add PEFT and transformers imports
+from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
 import os
 from dotenv import load_dotenv
 from typing import List, Dict, Optional
@@ -25,7 +28,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 def serve_home():
     return FileResponse("static/index.html")
 
-# CORS
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,41 +37,63 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Groq client
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+# Initialize model and tokenizer cache
+hf_models = {}
+hf_tokenizers = {}
 
 # Available models configuration
 AVAILABLE_MODELS = {
-    "llama3-8b": {
-        "id": "llama3-8b-8192",
-        "provider": "groq",
-        "max_tokens": 8192,
-        "description": "Llama 3 8B - Fast responses with good quality"
+    "aviation-gpt": {
+        "id": "SpontaneousSecret/llama2-aviationgpt",
+        "base_model": "unsloth/llama-2-7b-bnb-4bit",
+        "provider": "huggingface-peft",
+        "max_tokens": 2048,  # Adjust based on your model's capabilities
+        "description": "Aviation-focused GPT model based on Llama 2"
     },
-    "llama3-70b": {
-        "id": "llama3-70b-8192",
-        "provider": "groq",
-        "max_tokens": 8192,
-        "description": "Llama 3 70B - High quality responses"
-    },
-    "mixtral-8x7b": {
-        "id": "mixtral-8x7b-32768", 
-        "provider": "groq",
-        "max_tokens": 32768,
-        "description": "Mixtral 8x7B - Good for longer contexts"
-    },
-    "gemma-7b": {
-        "id": "gemma-7b-it",
-        "provider": "groq",
-        "max_tokens": 8192,
-        "description": "Gemma 7B - Google's efficient model"
-    }
+    # You can add more models if needed
 }
 
-DEFAULT_MODEL = "llama3-8b"
+DEFAULT_MODEL = "aviation-gpt"
+
+# Function to get or load HuggingFace PEFT model and tokenizer
+def get_hf_model_and_tokenizer(model_config):
+    model_id = model_config["id"]
+    if model_id not in hf_models:
+        try:
+            # Load tokenizer from base model
+            base_model_id = model_config.get("base_model", model_id)
+            tokenizer = AutoTokenizer.from_pretrained(base_model_id)
+            
+            # Special handling for PEFT models
+            if model_config["provider"] == "huggingface-peft":
+                print(f"Loading PEFT model: {model_id} with base model: {base_model_id}")
+                # Load the base model first
+                base_model = AutoModelForCausalLM.from_pretrained(
+                    base_model_id,
+                    torch_dtype=torch.float16,
+                    device_map="auto"
+                )
+                # Then load the PEFT model on top
+                model = PeftModel.from_pretrained(base_model, model_id)
+            else:
+                # Regular model loading
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_id,
+                    torch_dtype=torch.float16,
+                    device_map="auto"
+                )
+            
+            model.eval()  # Set to evaluation mode
+            hf_models[model_id] = model
+            hf_tokenizers[model_id] = tokenizer
+            print(f"Successfully loaded model and tokenizer for {model_id}")
+        except Exception as e:
+            print(f"Error loading model {model_id}: {str(e)}")
+            raise
+    
+    return hf_models[model_id], hf_tokenizers[model_id]
 
 # In-memory conversation storage
-# In production, use a database instead
 conversations = {}
 
 class Message(BaseModel):
@@ -187,20 +212,44 @@ async def chat(
     # Select model configuration
     model_config = AVAILABLE_MODELS[model_id]
     
-    # Call the LLM API
-    chat_completion = client.chat.completions.create(
-        model=model_config["id"],
-        messages=model_messages
-    )
-
-    english_response = chat_completion.choices[0].message.content.strip()
+    # Generate response based on provider
+    english_response = ""
+    if model_config["provider"] == "huggingface-peft":
+        try:
+            # Get model and tokenizer
+            model, tokenizer = get_hf_model_and_tokenizer(model_config)
+            
+            # Format conversation for Llama 2
+            prompt = format_llama2_conversation(model_messages)
+            
+            # Tokenize the input
+            inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+            
+            # Generate response
+            with torch.no_grad():
+                output = model.generate(
+                    inputs["input_ids"],
+                    max_new_tokens=1024,  # Adjust as needed
+                    temperature=0.7,
+                    top_p=0.9,
+                    do_sample=True,
+                    pad_token_id=tokenizer.eos_token_id
+                )
+            
+            # Decode the output
+            full_response = tokenizer.decode(output[0], skip_special_tokens=True)
+            
+            # Extract just the assistant's response
+            english_response = extract_assistant_response(full_response, prompt)
+            
+        except Exception as e:
+            english_response = f"Error generating response: {str(e)}"
     
-    now=datetime.now().isoformat()
-
+    # Add assistant message to conversation
     ai_message = Message(
-    role="assistant",
-    content=english_response,
-    timestamp=datetime.now().isoformat()
+        role="assistant",
+        content=english_response,
+        timestamp=datetime.now().isoformat()
     )
     conversation.messages.append(ai_message)
     
@@ -212,6 +261,58 @@ async def chat(
         "conversation_id": conversation.id,
         "model_id": model_id
     }
+
+# Helper function to format conversation for Llama 2
+def format_llama2_conversation(messages):
+    """
+    Format the conversation for Llama 2 model.
+    """
+    system_prompt = "You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information."
+    
+    # Check for system message
+    for i, message in enumerate(messages):
+        if message["role"] == "system":
+            system_prompt = message["content"]
+            messages.pop(i)
+            break
+    
+    formatted_prompt = f"<s>[INST] <<SYS>>\n{system_prompt}\n<</SYS>>\n\n"
+    
+    for i, message in enumerate(messages):
+        role = message["role"]
+        content = message["content"]
+        
+        if role == "user":
+            if i == len(messages) - 1:  # Last message
+                formatted_prompt += f"{content} [/INST]"
+            else:
+                formatted_prompt += f"{content} [/INST]"
+        elif role == "assistant":
+            formatted_prompt += f" {content} </s><s>[INST] "
+    
+    return formatted_prompt
+
+# Helper function to extract assistant's response
+def extract_assistant_response(full_response, prompt):
+    """
+    Extract just the assistant's response from the full model output.
+    """
+    # For Llama 2, the response comes after the last [/INST] token
+    if "[/INST]" in full_response:
+        response = full_response.split("[/INST]")[-1].strip()
+        
+        # Remove any trailing </s> tokens
+        response = response.split("</s>")[0].strip()
+        
+        # Remove any trailing [INST] tag if present
+        if "[INST]" in response:
+            response = response.split("[INST]")[0].strip()
+    else:
+        # Fallback: if the model output doesn't contain [/INST]
+        # just return everything after the prompt
+        response = full_response[len(prompt):].strip()
+    
+    return response
 
 # Get model info
 @app.get("/models/{model_id}")
@@ -232,3 +333,4 @@ async def set_conversation_model(conversation_id: str, model_id: str = Form(...)
     conversations[conversation_id].last_updated = datetime.now().isoformat()
     
     return {"success": True, "conversation_id": conversation_id, "model_id": model_id}
+
