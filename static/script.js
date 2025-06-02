@@ -11,7 +11,6 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Track conversation ID for history
   let currentConversationId = null;
-  let currentModel = 'llama3-70b';  // Default model
   let currentPdfFile = null;  // Store the selected PDF file
   
   // Function to add a message to the chat
@@ -180,7 +179,6 @@ document.addEventListener('DOMContentLoaded', function() {
           // Create form data for the API request
           const formData = new FormData();
           formData.append('message', message);
-          formData.append('model_id', currentModel);
           
           // Include conversation ID if we have one
           if (currentConversationId) {
@@ -252,18 +250,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Initialize UI and event listeners
   function initializeUI() {
-      // Load available models
-      fetch('/models')
-          .then(response => response.json())
-          .then(data => {
-              const models = data.models || {};
-              console.log('Available models:', models);
-              
-              // Set up model selector if needed
-              // This would be expanded for a proper UI with model switching
-          })
-          .catch(error => console.error('Error loading models:', error));
-      
       // Event listeners for sending messages
       sendButton.addEventListener('click', sendMessage);
       
@@ -277,21 +263,12 @@ document.addEventListener('DOMContentLoaded', function() {
       pdfUpload.addEventListener('change', handlePdfSelection);
       removePdfButton.addEventListener('click', clearPdfSelection);
       
-      // Quick Settings dropdown
+      // Quick Settings dropdown (if needed for other features)
       const dropdownButton = document.querySelector('.dropdown-button');
       if (dropdownButton) {
           dropdownButton.addEventListener('click', function() {
               // Implement dropdown functionality if needed
               console.log('Settings dropdown clicked');
-          });
-      }
-      
-      // Model selector
-      const modelSelector = document.querySelector('.model-selector');
-      if (modelSelector) {
-          modelSelector.addEventListener('click', function() {
-              // This would be expanded for a proper model switching UI
-              console.log('Model selector clicked');
           });
       }
   }

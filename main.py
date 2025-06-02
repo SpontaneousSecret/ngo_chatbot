@@ -1,101 +1,143 @@
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from tools.pdf_tool import extract_text_from_pdf
 from tools.language_tool import detect_language, translate_text
-# Add PEFT and transformers imports
-from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import os
+import sys
+import warnings
 from dotenv import load_dotenv
-from typing import List, Dict, Optional
+from typing import List, Optional
 import uuid
 from pydantic import BaseModel
-import json
 from datetime import datetime
+import gc
+
+# Suppress bitsandbytes warnings and force CPU usage
+os.environ["BITSANDBYTES_NOWELCOME"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+warnings.filterwarnings("ignore", message=".*bitsandbytes.*")
+warnings.filterwarnings("ignore", message=".*quantization.*")
 
 load_dotenv()
 
 app = FastAPI()
 
-# Serve static files from /static path
+# Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Serve the HTML as homepage
+# Serve homepage
 @app.get("/")
 def serve_home():
     return FileResponse("static/index.html")
 
-# CORS middleware
+# CORS middleware - More permissive for local development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-# Initialize model and tokenizer cache
-hf_models = {}
-hf_tokenizers = {}
-
-# Available models configuration
-AVAILABLE_MODELS = {
-    "aviation-gpt": {
-        "id": "SpontaneousSecret/llama2-aviationgpt",
-        "base_model": "unsloth/llama-2-7b-bnb-4bit",
-        "provider": "huggingface-peft",
-        "max_tokens": 2048,  # Adjust based on your model's capabilities
-        "description": "Aviation-focused GPT model based on Llama 2"
-    },
-    # You can add more models if needed
+# Model configuration
+MODEL_CONFIG = {
+    "id": "SpontaneousSecret/llama2-aviationgpt",
+    "max_tokens": 256,
+    "description": "Aviation-focused GPT model (PEFT Adapter)"
 }
 
-DEFAULT_MODEL = "aviation-gpt"
+# Global model variables
+hf_model = None
+hf_tokenizer = None
 
-# Function to get or load HuggingFace PEFT model and tokenizer
-def get_hf_model_and_tokenizer(model_config):
-    model_id = model_config["id"]
-    if model_id not in hf_models:
-        try:
-            # Load tokenizer from base model
-            base_model_id = model_config.get("base_model", model_id)
-            tokenizer = AutoTokenizer.from_pretrained(base_model_id)
-            
-            # Special handling for PEFT models
-            if model_config["provider"] == "huggingface-peft":
-                print(f"Loading PEFT model: {model_id} with base model: {base_model_id}")
-                # Load the base model first
-                base_model = AutoModelForCausalLM.from_pretrained(
-                    base_model_id,
-                    torch_dtype=torch.float16,
-                    device_map="auto"
-                )
-                # Then load the PEFT model on top
-                model = PeftModel.from_pretrained(base_model, model_id)
-            else:
-                # Regular model loading
-                model = AutoModelForCausalLM.from_pretrained(
-                    model_id,
-                    torch_dtype=torch.float16,
-                    device_map="auto"
-                )
-            
-            model.eval()  # Set to evaluation mode
-            hf_models[model_id] = model
-            hf_tokenizers[model_id] = tokenizer
-            print(f"Successfully loaded model and tokenizer for {model_id}")
-        except Exception as e:
-            print(f"Error loading model {model_id}: {str(e)}")
-            raise
+# Model loading function - Simple approach for PEFT adapter
+def get_model_and_tokenizer():
+    global hf_model, hf_tokenizer
     
-    return hf_models[model_id], hf_tokenizers[model_id]
+    if hf_model is None or hf_tokenizer is None:
+        try:
+            model_id = MODEL_CONFIG["id"]
+            print(f"Loading Aviation GPT PEFT adapter: {model_id}")
+            
+            # Load tokenizer
+            hf_tokenizer = AutoTokenizer.from_pretrained(model_id)
+            if hf_tokenizer.pad_token is None:
+                hf_tokenizer.pad_token = hf_tokenizer.eos_token
+            
+            # Install PEFT if needed
+            try:
+                from peft import PeftModel
+            except ImportError:
+                print("Installing PEFT...")
+                import subprocess
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "peft"])
+                from peft import PeftModel
+            
+            # Use your Aviation GPT PEFT adapter with compatible base model
+            
+            # First, try to load PEFT config to get the exact base model
+            try:
+                from peft import PeftConfig
+                peft_config = PeftConfig.from_pretrained(model_id)
+                original_base = peft_config.base_model_name_or_path
+                print(f"Original base model from PEFT config: {original_base}")
+                
+                # Map quantized models to their non-quantized equivalents
+                base_model_mapping = {
+                    "unsloth/llama-2-7b-bnb-4bit": "NousResearch/Llama-2-7b-hf",
+                    "unsloth/llama-2-13b-bnb-4bit": "NousResearch/Llama-2-13b-hf", 
+                }
+                
+                # Use non-quantized equivalent for Mac M1 compatibility
+                if original_base in base_model_mapping:
+                    base_model_id = base_model_mapping[original_base]
+                    print(f"Using non-quantized equivalent: {base_model_id}")
+                else:
+                    # Fallback to a compatible Llama-2-7b model
+                    base_model_id = "NousResearch/Llama-2-7b-hf"
+                    print(f"Using fallback compatible model: {base_model_id}")
+                    
+            except Exception as config_error:
+                print(f"Could not read PEFT config: {config_error}")
+                # Default to compatible Llama-2-7b for your Aviation GPT
+                base_model_id = "NousResearch/Llama-2-7b-hf"
+                print(f"Using default compatible model: {base_model_id}")
+            
+            print(f"Loading base model for Aviation GPT adapter: {base_model_id}")
+            
+            # Load base model optimized for 8GB Mac M1
+            base_model = AutoModelForCausalLM.from_pretrained(
+                base_model_id,
+                torch_dtype=torch.float16,  # Use float16 for memory efficiency
+                device_map="cpu",           # Force CPU to avoid GPU memory issues
+                trust_remote_code=True,
+                low_cpu_mem_usage=True,     # Important for 8GB RAM
+                load_in_4bit=False,         # No quantization on CPU
+                load_in_8bit=False          # No quantization on CPU
+            )
+            
+            print("Loading PEFT adapter...")
+            
+            # Load PEFT adapter
+            hf_model = PeftModel.from_pretrained(base_model, model_id)
+            
+            # Set to eval mode
+            hf_model.eval()
+            gc.collect()
+            print("Aviation GPT model loaded successfully!")
+            
+        except Exception as e:
+            error_msg = f"Error loading model: {str(e)}"
+            print(error_msg)
+            raise Exception(error_msg)
+    
+    return hf_model, hf_tokenizer
 
-# In-memory conversation storage
-conversations = {}
-
+# Data models
 class Message(BaseModel):
     role: str
     content: str
@@ -104,11 +146,12 @@ class Message(BaseModel):
 class Conversation(BaseModel):
     id: str
     messages: List[Message]
-    model_id: str
     created_at: str
     last_updated: str
 
-# Create a new conversation or get existing one
+# In-memory storage
+conversations = {}
+
 def get_conversation(conversation_id: Optional[str] = None) -> Conversation:
     if conversation_id and conversation_id in conversations:
         return conversations[conversation_id]
@@ -118,23 +161,231 @@ def get_conversation(conversation_id: Optional[str] = None) -> Conversation:
     conversations[new_id] = Conversation(
         id=new_id,
         messages=[],
-        model_id=DEFAULT_MODEL,
         created_at=now,
         last_updated=now
     )
     return conversations[new_id]
 
-@app.get("/models")
-async def list_models():
-    return {"models": AVAILABLE_MODELS}
+# System prompt (customize this)
+def get_system_prompt():
+    return """You are an aviation expert AI assistant specialized in aircraft training, procedures, and technical knowledge. 
+You provide accurate, safety-focused information about aviation topics including:
+- Aircraft systems and operations
+- Flight procedures and regulations  
+- Weather and navigation
+- Safety protocols and emergency procedures
+- Pilot training and certification
 
+Always prioritize safety and accuracy in your responses."""
+
+def get_user_prompt_template(user_message: str, context: str = "") -> str:
+    if context:
+        return f"""Context from document: {context}
+
+User Question: {user_message}
+
+Please provide a comprehensive answer based on the context and your aviation knowledge."""
+    else:
+        return f"""User Question: {user_message}
+
+Please provide a helpful and accurate response."""
+
+# Chat endpoint - AUTO-LOADS MODEL ON FIRST MESSAGE
+@app.post("/chat")
+async def chat(
+    message: str = Form(...), 
+    pdf: Optional[UploadFile] = File(None),
+    conversation_id: Optional[str] = Form(None)
+):
+    conversation = get_conversation(conversation_id)
+    conversation.last_updated = datetime.now().isoformat()
+    
+    context = ""
+
+    # Process PDF if provided
+    if pdf:
+        try:
+            pdf_bytes = await pdf.read()
+            context = extract_text_from_pdf(pdf_bytes)
+        except Exception as e:
+            context = f"(PDF processing failed: {str(e)})"
+
+    # Detect language and translate
+    try:
+        lang = detect_language(message)
+        english_message = translate_text(message, lang)
+    except Exception as e:
+        lang = "en"
+        english_message = message
+        print(f"Language detection error: {e}")
+    
+    # Add user message
+    user_message = Message(
+        role="user",
+        content=english_message,
+        timestamp=datetime.now().isoformat()
+    )
+    conversation.messages.append(user_message)
+    
+    # *** AUTO-LOAD MODEL ON FIRST MESSAGE ***
+    if hf_model is None:
+        print("🚀 Loading Aviation GPT model for first use...")
+        try:
+            get_model_and_tokenizer()
+            print("✅ Model loaded successfully!")
+        except Exception as e:
+            print(f"❌ Model loading failed: {e}")
+            # Add error response and return
+            ai_message = Message(
+                role="assistant",
+                content=f"I'm sorry, but I couldn't load the Aviation GPT model. Error: {str(e)}. Please try restarting the server or check your internet connection.",
+                timestamp=datetime.now().isoformat()
+            )
+            conversation.messages.append(ai_message)
+            return {
+                "response": ai_message.content,
+                "conversation_id": conversation.id
+            }
+    
+    # Build messages for model
+    model_messages = [{"role": "system", "content": get_system_prompt()}]
+    
+    # Add recent conversation history (last 6 messages)
+    recent_messages = conversation.messages[-6:] if len(conversation.messages) > 6 else conversation.messages
+    for msg in recent_messages[:-1]:
+        model_messages.append({"role": msg.role, "content": msg.content})
+    
+    # Add current message with context
+    formatted_message = get_user_prompt_template(english_message, context)
+    model_messages.append({"role": "user", "content": formatted_message})
+    
+    # Generate response
+    english_response = ""
+    try:
+        model, tokenizer = get_model_and_tokenizer()
+        prompt = format_llama2_conversation(model_messages)
+        
+        # Tokenize input
+        inputs = tokenizer(
+            prompt, 
+            return_tensors="pt", 
+            max_length=1024,
+            truncation=True
+        )
+        
+        # Move to model device
+        model_device = next(model.parameters()).device
+        inputs = {k: v.to(model_device) for k, v in inputs.items()}
+        
+        # Generate
+        with torch.no_grad():
+            try:
+                output = model.generate(
+                    inputs["input_ids"],
+                    attention_mask=inputs.get("attention_mask"),
+                    max_new_tokens=128,
+                    temperature=0.7,
+                    top_p=0.9,
+                    do_sample=True,
+                    pad_token_id=tokenizer.eos_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
+                    use_cache=True
+                )
+                
+                full_response = tokenizer.decode(output[0], skip_special_tokens=True)
+                english_response = extract_assistant_response(full_response, prompt)
+                
+                del output
+                gc.collect()
+                
+            except torch.OutOfMemoryError:
+                english_response = "ERROR: Out of memory. Try with a shorter message or restart the server."
+            except Exception as gen_e:
+                english_response = f"ERROR: Generation failed - {str(gen_e)}"
+                
+    except Exception as e:
+        english_response = f"ERROR: Model inference failed - {str(e)}"
+    
+    # Add AI response
+    ai_message = Message(
+        role="assistant",
+        content=english_response,
+        timestamp=datetime.now().isoformat()
+    )
+    conversation.messages.append(ai_message)
+    
+    # Translate back if needed
+    try:
+        if lang != "en" and not english_response.startswith("ERROR:"):
+            translated_response = translate_text(english_response, lang, reverse=True)
+        else:
+            translated_response = english_response
+    except Exception as e:
+        translated_response = english_response
+        print(f"Translation error: {e}")
+
+    return {
+        "response": translated_response,
+        "conversation_id": conversation.id
+    }
+
+# Helper functions
+def format_llama2_conversation(messages):
+    system_prompt = ""
+    conversation_messages = []
+    
+    for message in messages:
+        if message["role"] == "system":
+            system_prompt = message["content"]
+        else:
+            conversation_messages.append(message)
+    
+    if system_prompt:
+        formatted_prompt = f"<s>[INST] <<SYS>>\n{system_prompt}\n<</SYS>>\n\n"
+    else:
+        formatted_prompt = "<s>[INST] "
+    
+    for i, message in enumerate(conversation_messages):
+        role = message["role"]
+        content = message["content"]
+        
+        if role == "user":
+            if i == 0 and system_prompt:
+                formatted_prompt += f"{content} [/INST]"
+            elif i == len(conversation_messages) - 1:
+                formatted_prompt += f"{content} [/INST]"
+            else:
+                formatted_prompt += f"{content} [/INST]"
+        elif role == "assistant":
+            formatted_prompt += f" {content} </s><s>[INST] "
+    
+    return formatted_prompt
+
+def extract_assistant_response(full_response, prompt):
+    try:
+        if "[/INST]" in full_response:
+            response = full_response.split("[/INST]")[-1].strip()
+            response = response.split("</s>")[0].strip()
+            if "[INST]" in response:
+                response = response.split("[INST]")[0].strip()
+        else:
+            response = full_response[len(prompt):].strip()
+        
+        if len(response.strip()) < 5:
+            return "I apologize, but I couldn't generate a proper response. Please try rephrasing your question."
+        
+        return response
+        
+    except Exception as e:
+        return f"ERROR: Response extraction failed - {str(e)}"
+
+# Other endpoints
 @app.get("/conversations")
 async def get_conversations():
     return {
         "conversations": [
             {
                 "id": conv_id,
-                "model_id": conv.model_id,
                 "created_at": conv.created_at,
                 "last_updated": conv.last_updated,
                 "message_count": len(conv.messages)
@@ -155,182 +406,33 @@ async def delete_conversation(conversation_id: str):
         del conversations[conversation_id]
     return {"success": True}
 
-@app.post("/chat")
-async def chat(
-    message: str = Form(...), 
-    pdf: Optional[UploadFile] = File(None),
-    model_id: str = Form(DEFAULT_MODEL),
-    conversation_id: Optional[str] = Form(None)
-):
-    # Validate model
-    if model_id not in AVAILABLE_MODELS:
-        raise HTTPException(status_code=400, detail=f"Model {model_id} not available. Choose from: {list(AVAILABLE_MODELS.keys())}")
-    
-    # Get or create conversation
-    conversation = get_conversation(conversation_id)
-    conversation.model_id = model_id
-    conversation.last_updated = datetime.now().isoformat()
-    
-    context = ""
-
-    # Process PDF if provided
-    if pdf:
-        try:
-            pdf_bytes = await pdf.read()
-            context = extract_text_from_pdf(pdf_bytes)
-        except Exception as e:
-            context = f"(PDF Error: {str(e)})"
-
-    # Detect language and translate if needed
-    lang = detect_language(message)
-    english_message = translate_text(message, lang)
-    
-    # Add user message to conversation history
-    user_message = Message(
-        role="user",
-        content=english_message,
-        timestamp=datetime.now().isoformat()
-    )
-    conversation.messages.append(user_message)
-    
-    # Build model messages from conversation history
-    model_messages = []
-    for msg in conversation.messages:
-        model_messages.append({
-            "role": msg.role, 
-            "content": msg.content
-        })
-    
-    # Add context from PDF if available
-    if context:
-        # Insert context as a system message at the beginning
-        model_messages.insert(0, {
-            "role": "system", 
-            "content": f"The user has provided a document with the following content. Use this as context for your responses:\n\n{context}"
-        })
-    
-    # Select model configuration
-    model_config = AVAILABLE_MODELS[model_id]
-    
-    # Generate response based on provider
-    english_response = ""
-    if model_config["provider"] == "huggingface-peft":
-        try:
-            # Get model and tokenizer
-            model, tokenizer = get_hf_model_and_tokenizer(model_config)
-            
-            # Format conversation for Llama 2
-            prompt = format_llama2_conversation(model_messages)
-            
-            # Tokenize the input
-            inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-            
-            # Generate response
-            with torch.no_grad():
-                output = model.generate(
-                    inputs["input_ids"],
-                    max_new_tokens=1024,  # Adjust as needed
-                    temperature=0.7,
-                    top_p=0.9,
-                    do_sample=True,
-                    pad_token_id=tokenizer.eos_token_id
-                )
-            
-            # Decode the output
-            full_response = tokenizer.decode(output[0], skip_special_tokens=True)
-            
-            # Extract just the assistant's response
-            english_response = extract_assistant_response(full_response, prompt)
-            
-        except Exception as e:
-            english_response = f"Error generating response: {str(e)}"
-    
-    # Add assistant message to conversation
-    ai_message = Message(
-        role="assistant",
-        content=english_response,
-        timestamp=datetime.now().isoformat()
-    )
-    conversation.messages.append(ai_message)
-    
-    # Translate response back to original language if needed
-    translated_response = translate_text(english_response, lang, reverse=True)
-
+@app.get("/health")
+async def health_check():
     return {
-        "response": translated_response,
-        "conversation_id": conversation.id,
-        "model_id": model_id
+        "status": "healthy",
+        "device": "CPU (8GB Mac M1 optimized)",
+        "model": "Aviation GPT (PEFT Adapter)",
+        "model_loaded": hf_model is not None
     }
 
-# Helper function to format conversation for Llama 2
-def format_llama2_conversation(messages):
-    """
-    Format the conversation for Llama 2 model.
-    """
-    system_prompt = "You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information."
-    
-    # Check for system message
-    for i, message in enumerate(messages):
-        if message["role"] == "system":
-            system_prompt = message["content"]
-            messages.pop(i)
-            break
-    
-    formatted_prompt = f"<s>[INST] <<SYS>>\n{system_prompt}\n<</SYS>>\n\n"
-    
-    for i, message in enumerate(messages):
-        role = message["role"]
-        content = message["content"]
-        
-        if role == "user":
-            if i == len(messages) - 1:  # Last message
-                formatted_prompt += f"{content} [/INST]"
-            else:
-                formatted_prompt += f"{content} [/INST]"
-        elif role == "assistant":
-            formatted_prompt += f" {content} </s><s>[INST] "
-    
-    return formatted_prompt
+@app.get("/test")
+async def test_endpoint():
+    return {"message": "Backend is working!", "timestamp": datetime.now().isoformat()}
 
-# Helper function to extract assistant's response
-def extract_assistant_response(full_response, prompt):
-    """
-    Extract just the assistant's response from the full model output.
-    """
-    # For Llama 2, the response comes after the last [/INST] token
-    if "[/INST]" in full_response:
-        response = full_response.split("[/INST]")[-1].strip()
-        
-        # Remove any trailing </s> tokens
-        response = response.split("</s>")[0].strip()
-        
-        # Remove any trailing [INST] tag if present
-        if "[INST]" in response:
-            response = response.split("[INST]")[0].strip()
-    else:
-        # Fallback: if the model output doesn't contain [/INST]
-        # just return everything after the prompt
-        response = full_response[len(prompt):].strip()
-    
-    return response
-
-# Get model info
-@app.get("/models/{model_id}")
-async def get_model_info(model_id: str):
-    if model_id not in AVAILABLE_MODELS:
-        raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
-    return AVAILABLE_MODELS[model_id]
-
-# Set model for conversation
-@app.put("/conversations/{conversation_id}/model")
-async def set_conversation_model(conversation_id: str, model_id: str = Form(...)):
-    if conversation_id not in conversations:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    if model_id not in AVAILABLE_MODELS:
-        raise HTTPException(status_code=400, detail=f"Model {model_id} not available")
-    
-    conversations[conversation_id].model_id = model_id
-    conversations[conversation_id].last_updated = datetime.now().isoformat()
-    
-    return {"success": True, "conversation_id": conversation_id, "model_id": model_id}
-
+@app.post("/load-model")
+async def load_model():
+    """Manually load the Aviation GPT model"""
+    try:
+        print("Starting manual model loading...")
+        model, tokenizer = get_model_and_tokenizer()
+        return {
+            "status": "success",
+            "message": "Aviation GPT model loaded successfully!",
+            "model_loaded": True
+        }
+    except Exception as e:
+        return {
+            "status": "error", 
+            "message": f"Failed to load model: {str(e)}",
+            "model_loaded": False
+        }
